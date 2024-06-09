@@ -9,16 +9,18 @@
 constexpr const size_t ITERATIONS = 1;
 constexpr double EPSILON = 1e-6;
 
-MatrixA a, b, c, d;
 
 int main() {
+  size_t n = 2048;
+
+  Matrix a(n), b(n), c(n), d(n);
 
   // preparation
   std::mt19937 gen(42); // seed is constant
   std::uniform_real_distribution<double> dis(-1.0, 1.0);
 
-  for (size_t i = 0; i < MATRIX_SIZE; ++i) {
-    for (size_t j = 0; j < MATRIX_SIZE; ++j) {
+  for (size_t i = 0; i < n; ++i) {
+    for (size_t j = 0; j < n; ++j) {
       a[i][j] = dis(gen);
       b[i][j] = dis(gen);
     }
@@ -32,7 +34,7 @@ int main() {
   }
   auto end = std::chrono::high_resolution_clock::now();
 
-  long long operations = MATRIX_SIZE * MATRIX_SIZE * MATRIX_SIZE * 2 * ITERATIONS;
+  long long operations = n * n * n * 2 * ITERATIONS;
 
   std::chrono::duration<double> elapsed_seconds = end - start;
   std::cout << "Elapsed time: " << elapsed_seconds.count() << "s\n";
@@ -46,8 +48,8 @@ int main() {
   std::cout << "Elapsed time (OpenBLAS): " << elapsed_seconds.count() << "s\n";
   std::cout << "Performance: " << operations / elapsed_seconds.count() / 1e9 << " GFLOPS\n";
 
-  for (size_t i = 0; i < MATRIX_SIZE; ++i) {
-    for (size_t j = 0; j < MATRIX_SIZE; ++j) {
+  for (size_t i = 0; i < n; ++i) {
+    for (size_t j = 0; j < n; ++j) {
       if (std::abs(c[i][j] - d[i][j]) > EPSILON) {
         std::cerr << "Test failed\n";
         std::cerr << "c[" << i << "][" << j << "] = " << c[i][j] << " (expected " << d[i][j] << ")\n";

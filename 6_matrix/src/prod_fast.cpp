@@ -1,4 +1,5 @@
 #include "prod_fast.hpp"
+#include <cassert>
 #include <config.hpp>
 #include <cstring>
 #include <immintrin.h>
@@ -49,11 +50,14 @@ inline void shuf44(
 }
 
 
-void prod_fast(const MatrixA& a, const MatrixA& b, MatrixA& c) {
-  memset(c.data, 0, sizeof(c.data));
+void prod_fast(const Matrix& a, const Matrix& b, Matrix& c) {
+  assert(a.n == b.n && b.n == c.n);
+  const size_t n = a.n;
 
-  for (size_t i = 0; i < MATRIX_SIZE; i += NB) {
-    for (size_t j = 0; j < MATRIX_SIZE; j += MB) {
+  memset(c.data, 0, sizeof(double) * n * n);
+
+  for (size_t i = 0; i < n; i += NB) {
+    for (size_t j = 0; j < n; j += MB) {
       // copy to abuf
       // abuf = a_j,i
       for (size_t k = 0; k < MB; k += 4) {
@@ -65,7 +69,7 @@ void prod_fast(const MatrixA& a, const MatrixA& b, MatrixA& c) {
         }
       }
 
-      for (size_t k = 0; k < MATRIX_SIZE; k += 4) {
+      for (size_t k = 0; k < n; k += 4) {
         memset(cbuf, 0, sizeof(cbuf));
         __m256d *const cbuf0 = (__m256d*)cbuf;
 
