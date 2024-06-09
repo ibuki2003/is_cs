@@ -1,3 +1,4 @@
+#include <cassert>
 #include <iostream>
 #include <chrono>
 #include <prod_blas.hpp>
@@ -10,53 +11,70 @@ constexpr const size_t ITERATIONS = 1;
 constexpr double EPSILON = 1e-6;
 
 
-int main() {
-  size_t n = 2048;
-
-  Matrix a(n), b(n), c(n), d(n);
-
-  // preparation
-  std::mt19937 gen(42); // seed is constant
+std::mt19937 gen{42};
+void randomize(Matrix& a) {
   std::uniform_real_distribution<double> dis(-1.0, 1.0);
 
-  for (size_t i = 0; i < n; ++i) {
-    for (size_t j = 0; j < n; ++j) {
+  for (size_t i = 0; i < a.n; ++i) {
+    for (size_t j = 0; j < a.n; ++j) {
       a[i][j] = dis(gen);
-      b[i][j] = dis(gen);
     }
   }
+}
+
+enum mode { NAIVE, FAST, BLAS };
+
+double measure_performance(size_t n, mode m) {
+  Matrix a(n), b(n), c(n), d(n);
 
   // execution
 
   auto start = std::chrono::high_resolution_clock::now();
   for (size_t i = 0; i < ITERATIONS; ++i) {
-    prod_fast(a, b, c);
+    switch (m) {
+      case NAIVE: prod_naive(a, b, c); break;
+      case FAST: prod_fast(a, b, c); break;
+      case BLAS: prod_blas(a, b, c); break;
+    }
   }
   auto end = std::chrono::high_resolution_clock::now();
 
   long long operations = n * n * n * 2 * ITERATIONS;
 
   std::chrono::duration<double> elapsed_seconds = end - start;
-  std::cout << "Elapsed time: " << elapsed_seconds.count() << "s\n";
-  std::cout << "Performance: " << operations / elapsed_seconds.count() / 1e9 << " GFLOPS\n";
+  return operations / elapsed_seconds.count() / 1e9; // GFLOPS
+}
 
-  // validation
-  auto start2 = std::chrono::high_resolution_clock::now();
+bool validate(size_t n) {
+  Matrix a(n), b(n), c(n), d(n);
+  randomize(a);
+  randomize(b);
+
+  prod_fast(a, b, c);
   prod_blas(a, b, d);
-  auto end2 = std::chrono::high_resolution_clock::now();
-  elapsed_seconds = end2 - start2;
-  std::cout << "Elapsed time (OpenBLAS): " << elapsed_seconds.count() << "s\n";
-  std::cout << "Performance: " << operations / elapsed_seconds.count() / 1e9 << " GFLOPS\n";
 
   for (size_t i = 0; i < n; ++i) {
     for (size_t j = 0; j < n; ++j) {
       if (std::abs(c[i][j] - d[i][j]) > EPSILON) {
-        std::cerr << "Test failed\n";
         std::cerr << "c[" << i << "][" << j << "] = " << c[i][j] << " (expected " << d[i][j] << ")\n";
-        return 1;
+        return false;
       }
     }
   }
-  std::cout << "Test passed\n";
+  return true;
+}
+
+int main() {
+  if (validate(1024)) {
+    std::cout << "Test passed\n";
+  } else {
+    std::cout << "Test failed\n";
+    return 1;
+  }
+
+  for (size_t n = 256; n <= 4096; n *= 2) {
+    std::cout << n << '\t' << measure_performance(n, FAST) << '\n';
+  }
+
 }
 
