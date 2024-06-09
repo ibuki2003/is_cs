@@ -4,13 +4,13 @@
 #include <cstring>
 #include <immintrin.h>
 
-constexpr size_t NB3 = 128;
-constexpr size_t MB3 = 128;
-constexpr size_t KB3 = 128;
+constexpr size_t NB3 = 256;
+constexpr size_t MB3 = 256;
+constexpr size_t KB3 = 256;
 
-constexpr size_t NB2 = NB3;
-constexpr size_t MB2 = MB3;
-constexpr size_t KB2 = KB3;
+constexpr size_t NB2 = 64;
+constexpr size_t MB2 = 128;
+constexpr size_t KB2 = 256;
 
 inline void prod44(
   __m256d a,
@@ -61,6 +61,7 @@ void prod_fast(const Matrix& a, const Matrix& b, Matrix& c) {
 
   __align_avx__ double abuf2[MB2/4][KB2][4];
   __align_avx__ double bbuf2[NB2/4][KB2][4];
+  __align_avx__ __m256d cbuf2[MB2][NB2/4];
 
   // LOOP 3
   for (size_t i3 = 0; i3 < n; i3 += NB3) {
@@ -74,14 +75,13 @@ void prod_fast(const Matrix& a, const Matrix& b, Matrix& c) {
             // copy A[j][k];
             for (size_t x = 0; x < MB2; ++x) {
               for (size_t y = 0; y < KB2; ++y) {
-                /* assert(j3 + j2 + x < n); */
-                /* assert(k3 + k2 + y < n); */
                 abuf2[x/4][y][x%4] = a[j3 + j2 + x][k3 + k2 + y];
               }
             }
 
             for (size_t i2 = 0; i2 < NB3; i2 += NB2) {
 
+              memset(cbuf2, 0, sizeof(cbuf2));
 
               // copy B[k][i]
               for (size_t x = 0; x < KB2; ++x) {
@@ -114,12 +114,21 @@ void prod_fast(const Matrix& a, const Matrix& b, Matrix& c) {
                   /* _mm256_store_pd(&c[j3 + j2 + j1 + 2][i3 + i2 + i1], s2); */
                   /* _mm256_store_pd(&c[j3 + j2 + j1 + 3][i3 + i2 + i1], s3); */
 
-                  _mm256_store_pd(&c[j3 + j2 + j1 + 0][i3 + i2 + i1], _mm256_add_pd(s0, _mm256_load_pd(&c[j3 + j2 + j1 + 0][i3 + i2 + i1])));
-                  _mm256_store_pd(&c[j3 + j2 + j1 + 1][i3 + i2 + i1], _mm256_add_pd(s1, _mm256_load_pd(&c[j3 + j2 + j1 + 1][i3 + i2 + i1])));
-                  _mm256_store_pd(&c[j3 + j2 + j1 + 2][i3 + i2 + i1], _mm256_add_pd(s2, _mm256_load_pd(&c[j3 + j2 + j1 + 2][i3 + i2 + i1])));
-                  _mm256_store_pd(&c[j3 + j2 + j1 + 3][i3 + i2 + i1], _mm256_add_pd(s3, _mm256_load_pd(&c[j3 + j2 + j1 + 3][i3 + i2 + i1])));
+                  cbuf2[j1 + 0][i1/4] = s0;
+                  cbuf2[j1 + 1][i1/4] = s1;
+                  cbuf2[j1 + 2][i1/4] = s2;
+                  cbuf2[j1 + 3][i1/4] = s3;
+                }
+              }
 
-
+              // cbuf to c
+              for (size_t x = 0; x < MB2; ++x) {
+                for (size_t y = 0; y < NB2; y += 4) {
+                  auto& cc = c[j3 + j2 + x][i3 + i2 + y];
+                  _mm256_store_pd(
+                    &cc,
+                    _mm256_add_pd(_mm256_load_pd(&cc), cbuf2[x][y/4])
+                  );
                 }
               }
 
