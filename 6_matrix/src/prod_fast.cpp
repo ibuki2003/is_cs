@@ -4,14 +4,13 @@
 #include <cstring>
 #include <immintrin.h>
 
-constexpr size_t NB = 256;
-constexpr size_t MB = 128;
+constexpr size_t NB3 = 128;
+constexpr size_t MB3 = 128;
+constexpr size_t KB3 = 128;
 
-__align_avx__ double abuf[MB/4][NB][4];
-/* __align_avx__ double bbuf[NB][4]; */
-__align_avx__ __m256d bbuf[NB];
-__align_avx__ double cbuf[MB][4];
-
+constexpr size_t NB2 = NB3;
+constexpr size_t MB2 = MB3;
+constexpr size_t KB2 = KB3;
 
 inline void prod44(
   __m256d a,
@@ -54,57 +53,83 @@ void prod_fast(const Matrix& a, const Matrix& b, Matrix& c) {
   assert(a.n == b.n && b.n == c.n);
   const size_t n = a.n;
 
+  assert(n % NB3 == 0);
+  assert(n % MB3 == 0);
+  assert(n % KB3 == 0);
+
   memset(c.data, 0, sizeof(double) * n * n);
 
-  for (size_t i = 0; i < n; i += NB) {
-    for (size_t j = 0; j < n; j += MB) {
-      // copy to abuf
-      // abuf = a_j,i
-      for (size_t k = 0; k < MB; k += 4) {
-        for (size_t l = 0; l < NB; ++l) {
-          abuf[k/4][l][0] = a[j+k+0][i+l];
-          abuf[k/4][l][1] = a[j+k+1][i+l];
-          abuf[k/4][l][2] = a[j+k+2][i+l];
-          abuf[k/4][l][3] = a[j+k+3][i+l];
-        }
-      }
+  __align_avx__ double abuf2[MB2/4][KB2][4];
+  __align_avx__ double bbuf2[NB2/4][KB2][4];
 
-      for (size_t k = 0; k < n; k += 4) {
-        memset(cbuf, 0, sizeof(cbuf));
-        __m256d *const cbuf0 = (__m256d*)cbuf;
+  // LOOP 3
+  for (size_t i3 = 0; i3 < n; i3 += NB3) {
+    for (size_t j3 = 0; j3 < n; j3 += MB3) {
+      for (size_t k3 = 0; k3 < n; k3 += KB3) {
 
-        // copy to bbuf
-        // bbuf = b_i,k
-        for (size_t l = 0; l < NB; ++l) {
-          bbuf[l] = *(__m256d*)(b[i+l] + k);
-        }
+        // LOOP 2
+        for (size_t k2 = 0; k2 < KB3; k2 += KB2) {
+          for (size_t j2 = 0; j2 < MB3; j2 += MB2) {
 
-        for (size_t l = 0; l < MB; l += 4) {
-          __m256d *const cbufi = cbuf0 + l;
-          __m256d const *const abufil = (__m256d const*)(abuf + l/4);
+            // copy A[j][k];
+            for (size_t x = 0; x < MB2; ++x) {
+              for (size_t y = 0; y < KB2; ++y) {
+                /* assert(j3 + j2 + x < n); */
+                /* assert(k3 + k2 + y < n); */
+                abuf2[x/4][y][x%4] = a[j3 + j2 + x][k3 + k2 + y];
+              }
+            }
 
-          __m256d s0 = _mm256_setzero_pd();
-          __m256d s1 = _mm256_setzero_pd();
-          __m256d s2 = _mm256_setzero_pd();
-          __m256d s3 = _mm256_setzero_pd();
+            for (size_t i2 = 0; i2 < NB3; i2 += NB2) {
 
-          for (size_t m = 0; m < NB; ++m) {
-            prod44(abufil[m], bbuf[m], s0, s1, s2, s3);
+
+              // copy B[k][i]
+              for (size_t x = 0; x < KB2; ++x) {
+                for (size_t y = 0; y < NB2; y += 4) {
+                  bbuf2[y/4][x][0] = b[k3 + k2 + x][i3 + i2 + y + 0];
+                  bbuf2[y/4][x][1] = b[k3 + k2 + x][i3 + i2 + y + 1];
+                  bbuf2[y/4][x][2] = b[k3 + k2 + x][i3 + i2 + y + 2];
+                  bbuf2[y/4][x][3] = b[k3 + k2 + x][i3 + i2 + y + 3];
+                }
+              }
+
+              // LOOP 1
+              for (size_t i1 = 0; i1 < NB2; i1 += 4) {
+                for (size_t j1 = 0; j1 < MB2; j1 += 4) {
+                  __m256d s0 = _mm256_setzero_pd();
+                  __m256d s1 = _mm256_setzero_pd();
+                  __m256d s2 = _mm256_setzero_pd();
+                  __m256d s3 = _mm256_setzero_pd();
+
+                  for (size_t k1 = 0; k1 < KB2; k1++) {
+                    prod44(
+                      _mm256_load_pd(abuf2[j1/4][k1]),
+                      _mm256_load_pd(bbuf2[i1/4][k1]),
+                      s0, s1, s2, s3
+                    );
+                  }
+                  shuf44(s0, s1, s2, s3);
+                  /* _mm256_store_pd(&c[j3 + j2 + j1 + 0][i3 + i2 + i1], s0); */
+                  /* _mm256_store_pd(&c[j3 + j2 + j1 + 1][i3 + i2 + i1], s1); */
+                  /* _mm256_store_pd(&c[j3 + j2 + j1 + 2][i3 + i2 + i1], s2); */
+                  /* _mm256_store_pd(&c[j3 + j2 + j1 + 3][i3 + i2 + i1], s3); */
+
+                  _mm256_store_pd(&c[j3 + j2 + j1 + 0][i3 + i2 + i1], _mm256_add_pd(s0, _mm256_load_pd(&c[j3 + j2 + j1 + 0][i3 + i2 + i1])));
+                  _mm256_store_pd(&c[j3 + j2 + j1 + 1][i3 + i2 + i1], _mm256_add_pd(s1, _mm256_load_pd(&c[j3 + j2 + j1 + 1][i3 + i2 + i1])));
+                  _mm256_store_pd(&c[j3 + j2 + j1 + 2][i3 + i2 + i1], _mm256_add_pd(s2, _mm256_load_pd(&c[j3 + j2 + j1 + 2][i3 + i2 + i1])));
+                  _mm256_store_pd(&c[j3 + j2 + j1 + 3][i3 + i2 + i1], _mm256_add_pd(s3, _mm256_load_pd(&c[j3 + j2 + j1 + 3][i3 + i2 + i1])));
+
+
+                }
+              }
+
+            }
           }
-          shuf44(s0, s1, s2, s3);
-          cbufi[0] = _mm256_add_pd(cbufi[0], s0);
-          cbufi[1] = _mm256_add_pd(cbufi[1], s1);
-          cbufi[2] = _mm256_add_pd(cbufi[2], s2);
-          cbufi[3] = _mm256_add_pd(cbufi[3], s3);
         }
 
-        // write back to c
-        for (size_t l = 0; l < MB; l++) {
-          __m256d &cl = *(__m256d*)&(c[j+l][k]);
-          cl = _mm256_add_pd(cl, cbuf0[l]);
-        }
       }
     }
   }
+
 }
 
