@@ -64,16 +64,28 @@ bool validate(size_t n) {
   return true;
 }
 
-int main() {
-  if (validate(1024)) {
-    std::cout << "Test passed\n";
-  } else {
-    std::cout << "Test failed\n";
-    return 1;
+int main(int argc, char** argv) {
+  mode m = FAST;
+  if (argc > 1) {
+    switch (tolower(argv[1][0])) {
+      case 'n': m = NAIVE; break;
+      case 'f': m = FAST; break;
+      case 'b': m = BLAS; break;
+    }
   }
 
-  for (size_t n = 256; n <= 4096; n *= 2) {
-    std::cout << n << '\t' << measure_performance(n, FAST) << '\n';
+  if (m == FAST) {
+
+    if (validate(1024)) {
+      std::cout << "Test passed\n";
+    } else {
+      std::cout << "Test failed\n";
+      return 1;
+    }
+  }
+
+  for (size_t n = 256; n <= 4096; n += 256) {
+    std::cout << n << '\t' << measure_performance(n, m) << '\n';
   }
 
 }
